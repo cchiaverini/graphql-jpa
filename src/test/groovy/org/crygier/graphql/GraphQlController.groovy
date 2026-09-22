@@ -1,6 +1,6 @@
 package org.crygier.graphql
 
-import com.fasterxml.jackson.databind.ObjectMapper
+import tools.jackson.databind.ObjectMapper
 import graphql.ExecutionResult
 import groovy.transform.CompileStatic
 import org.springframework.beans.factory.annotation.Autowired

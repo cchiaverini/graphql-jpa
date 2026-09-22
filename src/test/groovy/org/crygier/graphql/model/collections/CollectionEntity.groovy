@@ -3,14 +3,14 @@ package org.crygier.graphql.model.collections;
 import groovy.transform.CompileStatic;
 import org.crygier.graphql.annotation.SchemaDocumentation;
 
-import javax.persistence.ElementCollection;
-import javax.persistence.Entity;
-import javax.persistence.Id;
-import javax.persistence.JoinColumn
+import jakarta.persistence.ElementCollection;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn
 import java.util.ArrayList;
 import java.util.List;
-import javax.persistence.CollectionTable
-import javax.persistence.Column
+import jakarta.persistence.CollectionTable
+import jakarta.persistence.Column
 
 @Entity
 @CompileStatic
@@ -29,7 +29,9 @@ public class CollectionEntity {
 		  name="STRINGS",
 		  joinColumns=@JoinColumn(name="OWNER_ID")
 	)
-	@Column(name="VALUE")
+	// Backticks tell Hibernate to quote this column; VALUE is a reserved SQL
+	// keyword that Hibernate 7 no longer auto-quotes.
+	@Column(name="`VALUE`")
     List<String> strings = new ArrayList<String>();
 	
 	@SchemaDocumentation("A List of Objects")
@@ -38,7 +40,7 @@ public class CollectionEntity {
 		  name="OBJECTS",
 		  joinColumns=@JoinColumn(name="OWNER_ID")
 	)
-	@Column(name="VALUE")
+	@Column(name="`VALUE`")
 	List<EmbeddedObject> objects = new ArrayList<EmbeddedObject>();
 }
 

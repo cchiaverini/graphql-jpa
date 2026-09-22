@@ -8,22 +8,22 @@ import java.lang.reflect.Member;
 import java.lang.reflect.Method;
 import java.math.BigInteger;
 
-import javax.persistence.EntityManager;
-import javax.persistence.TypedQuery;
-import javax.persistence.criteria.*;
-import javax.persistence.metamodel.Attribute;
-import javax.persistence.metamodel.EntityType;
-import javax.persistence.metamodel.PluralAttribute;
-import javax.persistence.metamodel.SingularAttribute;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.TypedQuery;
+import jakarta.persistence.criteria.*;
+import jakarta.persistence.metamodel.Attribute;
+import jakarta.persistence.metamodel.EntityType;
+import jakarta.persistence.metamodel.PluralAttribute;
+import jakarta.persistence.metamodel.SingularAttribute;
 import java.util.*;
 import java.util.stream.Collectors;
-import javax.persistence.Cacheable;
-import javax.persistence.Embeddable;
-import javax.persistence.Entity;
-import javax.persistence.ManyToMany;
-import javax.persistence.ManyToOne;
-import javax.persistence.OneToMany;
-import javax.persistence.OneToOne;
+import jakarta.persistence.Cacheable;
+import jakarta.persistence.Embeddable;
+import jakarta.persistence.Entity;
+import jakarta.persistence.ManyToMany;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OneToOne;
 import org.crygier.graphql.annotation.SecurityId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,7 +44,7 @@ public class JpaDataFetcher implements DataFetcher {
     public Object get(DataFetchingEnvironment environment) {
 		
 		Object result = null;
-		Field field = environment.getFields().iterator().next();
+		Field field = environment.getMergedField().getFields().iterator().next();
 		
 		TypedQuery typedQuery = getQuery(environment, field);
 		
@@ -362,7 +362,7 @@ public class JpaDataFetcher implements DataFetcher {
 			}
 		} else {
 			parent = environment.getSource();
-			fieldName = environment.getFields().get(0).getName();
+			fieldName = environment.getMergedField().getFields().get(0).getName();
 			if (fieldName.contains("Connection")) {
 				fieldName = fieldName.substring(0, fieldName.indexOf("Connection"));
 			}
@@ -435,9 +435,13 @@ public class JpaDataFetcher implements DataFetcher {
 	private Predicate getFieldValueThroughHibernateProxy(Object parent, String fieldName, CriteriaBuilder cb, Root root) {
 
 		Predicate result = null;
-		
-		//This implementation may be fragile if hibernate changes it's implementation.  However, the performance benefits
-		//of using the id is much better than using a subquery
+
+		// Filtering by the associated entity's identifier is much cheaper than a subquery.
+		// Rather than reflecting on Hibernate proxy internals (the old $$_hibernate_interceptor
+		// field, which Hibernate 7 no longer exposes for lazy @ManyToOne associations), use the
+		// standard JPA PersistenceUnitUtil.getIdentifier(). It returns the identifier for both
+		// uninitialized proxies and fully materialized entities, without triggering a lazy load,
+		// so it works consistently across Hibernate versions.
 		Class clazz = parent.getClass();
 		try {
 			java.lang.reflect.Field field = clazz.getDeclaredField(fieldName);
@@ -446,33 +450,43 @@ public class JpaDataFetcher implements DataFetcher {
 			Object fieldValue = field.get(parent);
 
 			if (fieldValue != null) {
-				java.lang.reflect.Field handlerField = fieldValue.getClass().getDeclaredField("$$_hibernate_interceptor");
-				handlerField.setAccessible(true);
+				Object identifier = entityManager.getEntityManagerFactory()
+						.getPersistenceUnitUtil().getIdentifier(fieldValue);
 
-				Object handler = handlerField.get(fieldValue);
-
-				try {
-					if (Class.forName("org.hibernate.proxy.LazyInitializer").isAssignableFrom(handler.getClass())) {
-						Method getIdentifier = handler.getClass().getMethod("getIdentifier", (Class[]) null);
-						result = cb.equal(root, getIdentifier.invoke(handler, (Object[]) null));
-					}
-				} catch (NoSuchMethodException | InvocationTargetException ex) {
-					log.warn("Error attempting to process hibernate proxy");
-					log.debug("Error invoking method", ex);
-				} catch (ClassNotFoundException ex) {
-					//This just means that we're not using hibernate
-					log.warn("Unable process hibernate proxy - Hibernate does not appear to be present");
+				if (identifier != null) {
+					// Hibernate 7 enforces strict Criteria type-checking: comparing an entity path
+					// (root) directly to a scalar id is rejected. Compare the identifier attribute.
+					result = cb.equal(idPath(root), identifier);
 				}
 			} else {
 				result = cb.isNull(root);
 			}
 
 		} catch (NoSuchFieldException | SecurityException | IllegalArgumentException | IllegalAccessException ex) {
-				log.warn("Error attempting to process hibernate proxy");
+				log.warn("Error attempting to resolve associated entity identifier");
 				log.debug("Error accessing field", ex);
 		}
 		
 		return result;
+	}
+
+	/**
+	 * Resolve the identifier {@link Path} of the given entity root. Hibernate 7 tightened Criteria
+	 * type-checking so that an entity path can no longer be compared directly to a scalar id value;
+	 * the comparison must target the identifier attribute.
+	 *
+	 * <p>This proxy-id shortcut only applies to entities with a single (basic) identifier - the same
+	 * assumption the original implementation made. For entities with a composite id
+	 * ({@code @IdClass} / {@code @EmbeddedId}) we fall back to comparing the entity path itself so as
+	 * not to change behaviour for those cases.
+	 */
+	private Path<?> idPath(Root root) {
+		if (entityType.hasSingleIdAttribute()) {
+			SingularAttribute<?, ?> idAttribute =
+					entityType.getId(entityType.getIdType().getJavaType());
+			return root.get(idAttribute.getName());
+		}
+		return root;
 	}
 	
 	private Predicate getFieldValueAsLiteral(Object parent, String fieldName, CriteriaBuilder cb, Root root) {
@@ -486,7 +500,8 @@ public class JpaDataFetcher implements DataFetcher {
 
 			Object fieldValue = field.get(parent);
 
-			result = cb.equal(root, cb.literal(fieldValue));
+			// Compare against the identifier attribute (see idPath / Hibernate 7 note above).
+			result = cb.equal(idPath(root), cb.literal(fieldValue));
 			
 		} catch (NoSuchFieldException | SecurityException | IllegalArgumentException | IllegalAccessException ex) {
 				log.warn("Error attempting to get field value");

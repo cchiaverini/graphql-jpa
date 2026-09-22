@@ -7,8 +7,8 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.test.context.ContextConfiguration
 import spock.lang.Specification
 
-import javax.persistence.EntityManager
-import javax.persistence.metamodel.EntityType
+import jakarta.persistence.EntityManager
+import jakarta.persistence.metamodel.EntityType
 import java.util.stream.Collectors
 
 @Configuration

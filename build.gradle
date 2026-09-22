@@ -7,14 +7,19 @@ plugins {
     id 'org.ajoberstar.grgit' version '2.2.1'
 }
 
-version = 'v18.6-SNAPSHOT'
+version = 'v24.0-SNAPSHOT'
 
 java {
-    sourceCompatibility = 1.8
-    targetCompatibility = 1.8
+    // Emit Java 25 bytecode. Consumers of this artifact must run on JDK 25+.
+    sourceCompatibility = 25
+    targetCompatibility = 25
 
     withSourcesJar()
 }
+
+//tasks.withType(JavaCompile) {
+//    options.compilerArgs += ['-Xlint:deprecation']
+//}
 
 def repo = org.ajoberstar.grgit.Grgit.open(currentDir: project.rootDir)
 
@@ -30,6 +35,11 @@ jar {
     }
 }
 
+test {
+    // Spock 2.x runs on the JUnit Platform; Gradle 9 no longer infers this.
+    useJUnitPlatform()
+}
+
 repositories {
     mavenCentral()
 }
@@ -40,27 +50,39 @@ configurations {
 }
 
 dependencies {
-    implementation 'com.graphql-java:graphql-java:18.6'
-    implementation 'com.graphql-java:graphql-java-extended-scalars:18.3'
-    implementation 'javax.transaction:javax.transaction-api:1.2'
-    implementation 'net.bytebuddy:byte-buddy:1.12.22'
-    implementation 'net.bytebuddy:byte-buddy-agent:1.12.22'
-    implementation 'javax.servlet:javax.servlet-api:4.0.1'
-    implementation 'org.hibernate.javax.persistence:hibernate-jpa-2.1-api:1.0.0.Final'
-    implementation 'javax:javaee-api:8.0.1'
+    // graphql-java 25.x aligns with Spring for GraphQL 2.0.x (Spring Boot 4.1).
+    // extended-scalars has no 25.x line yet; 24.0 is compatible with graphql-java 25.0.
+    implementation 'com.graphql-java:graphql-java:25.0'
+    implementation 'com.graphql-java:graphql-java-extended-scalars:24.0'
+    // graphql-java 24 no longer brings slf4j transitively; declare it explicitly.
+    implementation 'org.slf4j:slf4j-api:2.0.16'
+    implementation 'jakarta.transaction:jakarta.transaction-api:2.0.1'
+    // byte-buddy 1.17.x supports class-file redefinition on JDK 21/25.
+    implementation 'net.bytebuddy:byte-buddy:1.17.8'
+    implementation 'net.bytebuddy:byte-buddy-agent:1.17.8'
+    // Jakarta EE 11 baseline (matches Spring Framework 7 / Spring Boot 4).
+    implementation 'jakarta.servlet:jakarta.servlet-api:6.1.0'
+    implementation 'jakarta.persistence:jakarta.persistence-api:3.2.0'
+    implementation 'jakarta.platform:jakarta.jakartaee-api:11.0.0'
 
-    testImplementation "org.springframework.boot:spring-boot-starter:2.7.8"
-    testImplementation "org.springframework.boot:spring-boot-starter-test:2.7.8"
-    testImplementation "org.springframework.boot:spring-boot-starter-data-jpa:2.7.8"
-    testImplementation "org.springframework.boot:spring-boot-starter-web:2.7.8"
-    testImplementation 'junit:junit:4.11'
-    testImplementation 'org.spockframework:spock-core:1.1-groovy-2.4'
-    testImplementation 'org.spockframework:spock-spring:1.1-groovy-2.4'
-    testImplementation 'org.codehaus.groovy:groovy-all:2.4.4'
-    testImplementation 'cglib:cglib-nodep:3.1'
-    testImplementation 'org.objenesis:objenesis:2.1'
+    // Spring Boot 4.x (Spring 7 / Jakarta EE 11) brings Hibernate 7, which
+    // implements Jakarta Persistence 3.2 (jakarta.persistence.SchemaManager).
+    // Spring Boot 3.5 pins Hibernate 6.6 (Jakarta Persistence 3.1), which
+    // collides with the 3.2 API declared below via jakartaee-api:11.0.0.
+    testImplementation "org.springframework.boot:spring-boot-starter:4.1.1"
+    testImplementation "org.springframework.boot:spring-boot-starter-test:4.1.1"
+    testImplementation "org.springframework.boot:spring-boot-starter-data-jpa:4.1.1"
+    testImplementation "org.springframework.boot:spring-boot-starter-web:4.1.1"
+    testImplementation 'junit:junit:4.13.2'
+    // Groovy 5 / Spock 2.4-groovy-5.0 are required to read Java 25 (class file
+    // major version 69) bytecode produced by the main source set.
+    testImplementation 'org.spockframework:spock-core:2.4-groovy-5.0'
+    testImplementation 'org.spockframework:spock-spring:2.4-groovy-5.0'
+    testImplementation 'org.apache.groovy:groovy-all:5.0.8'
+    testImplementation 'cglib:cglib-nodep:3.3.0'
+    testImplementation 'org.objenesis:objenesis:3.4'
 
-    testRuntimeOnly "com.h2database:h2:1.4.190"
+    testRuntimeOnly "com.h2database:h2:2.2.224"
 }
 
 publishing {
@@ -77,10 +99,10 @@ publishing {
 eclipse {
     classpath {
          containers.remove('org.eclipse.jdt.launching.JRE_CONTAINER')
-         containers 'org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-1.8'
+         containers 'org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-25'
     }
 }
 
 wrapper {
-    gradleVersion = '8.0.2'
+    gradleVersion = '9.2.0'
 }
